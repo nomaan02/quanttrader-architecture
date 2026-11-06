@@ -1,0 +1,60 @@
+# Local reference stack: synthetic feed -> Redis Streams -> QuestDB.
+# All ports are bound to 127.0.0.1, so nothing is exposed to your network.
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --requirepass ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env} --appendonly yes --appendfsync everysec
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep PONG"]
+      interval: 5s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+  questdb:
+    # Pinned by digest, never :latest. A major QuestDB upgrade can change the
+    # on-disk format, so upgrades should be a deliberate, backed-up step.
+    image: questdb/questdb@sha256:e3643adc18f68bc02f3074c841d3f765f6c299443f8e4ca57b3bcac1a05e224d
+    ports:
+      - "127.0.0.1:9000:9000"   # web console, REST (SQL) and ILP over HTTP
+    volumes:
+      - questdb-data:/var/lib/questdb
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/exec?query=SELECT%201"]
+      interval: 5s
+      retries: 20
+
+  producer:
+    build: .
+    command: python -m services.producer
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      TICKS_PER_SECOND: ${TICKS_PER_SECOND:-5}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  writer:
+    build: .
+    command: python -m services.writer
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      QDB_ILP_CONF: "http::addr=questdb:9000;"
+      QDB_REST_URL: http://questdb:9000
+      CONSUMER_NAME: writer-1
+    depends_on:
+      redis:
+        condition: service_healthy
+      questdb:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  questdb-data:
