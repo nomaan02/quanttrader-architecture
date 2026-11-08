@@ -1,5 +1,5 @@
 # QuantTrader: real-time trading data architecture
-**Status:** 📐 Architecture showcase · source code is private
+![Status](https://img.shields.io/badge/status-architecture%20showcase-blue)
 
 **How a small team moves live market data from broker and data-vendor APIs into a time-series database reliably, and a runnable reference version you can start with one command.**
 
